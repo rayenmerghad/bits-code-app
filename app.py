@@ -44,7 +44,6 @@ def orders_summary():
             })
     return jsonify(result)
 
-
 @app.route("/products")
 def list_products():
     return jsonify(list(PRODUCTS.values()))
