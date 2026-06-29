@@ -1,54 +1,49 @@
 import ddtrace.auto
 from flask import Flask, jsonify, request
 import time
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
 PRODUCTS = {
     1: {"id": 1, "name": "Widget A", "stock": 100, "price": 9.99},
     2: {"id": 2, "name": "Widget B", "stock": 0,   "price": 24.99},
+    3: {"id": 3, "name": "Widget C", "stock": 25,  "price": 49.99},
 }
 
-# BUG 1: fixed
-@app.route("/products/<int:pid>/score")
-def score(pid):
-    p = PRODUCTS.get(pid)
-    if not p:
-        return jsonify({"error": "not found"}), 404
-    stock = p["stock"]
-    result = 100 if stock > 0 else 0
-    return jsonify({"score": result})
+ORDERS = {
+    1: {"product_id": 1, "qty": 2},
+    2: {"product_id": 3, "qty": 1},
+    3: {"product_id": 2, "qty": 5},
+}
 
-# BUG 2: still wrong (kept intentionally)
-@app.route("/products/<int:pid>/price")
-def discounted_price(pid):
-    p = PRODUCTS.get(pid)
-    if not p:
-        return jsonify({"error": "not found"}), 404
-    discount = float(request.args.get("discount", 0))
-    final = p["price"] * (discount / 100)  # BUG: should be price * (1 - discount/100)
-    return jsonify({"original": p["price"], "final": final})
 
-# BUG 3: audit log grows forever in memory + slow sleep on every request
-# Every call appends to a global list that is never cleared.
-# Datadog APM will show latency spike + memory growth over time.
-audit_log = []
+# N+1 QUERY PATTERN — fetches each product individually in a loop
+# instead of loading all products in one batched call.
+# Each call to get_product_by_id() simulates a separate DB round-trip.
+# At scale: 100 orders = 100 sequential queries = O(n) latency.
 
-@app.route("/products/<int:pid>/view")
-def view_product(pid):
-    p = PRODUCTS.get(pid)
-    if not p:
-        return jsonify({"error": "not found"}), 404
+def get_product_by_id(pid):
+    time.sleep(0.10)   # simulates per-item DB lookup
+    return PRODUCTS.get(pid)
 
-    time.sleep(0.2)  # BUG: simulates slow "audit write" that should be async
+@app.route("/orders/summary")
+def orders_summary():
+    result = []
+    for order_id, order in ORDERS.items():
+        product = get_product_by_id(order["product_id"])  # N+1 here
+        if product:
+            result.append({
+                "order_id": order_id,
+                "product":  product["name"],
+                "qty":      order["qty"],
+                "total":    round(product["price"] * order["qty"], 2),
+            })
+    return jsonify(result)
 
-    audit_log.append({          # BUG: unbounded list, never flushed
-        "pid": pid,
-        "ts": time.time(),
-        "name": p["name"],
-    })
-
-    return jsonify({"product": p, "total_views": len(audit_log)})
 
 @app.route("/products")
 def list_products():
@@ -57,6 +52,7 @@ def list_products():
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
 
 if __name__ == "__main__":
     app.run(port=8080, debug=True)
