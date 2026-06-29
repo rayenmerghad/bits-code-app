@@ -14,7 +14,8 @@ def score(pid):
     p = PRODUCTS.get(pid)
     if not p:
         return jsonify({"error": "not found"}), 404
-    result = (p["stock"] / p["stock"]) * 100  # crashes when stock=0
+    stock = p["stock"]
+    result = 100 if stock > 0 else 0
     return jsonify({"score": result})
 
 # BUG 2: discount formula is wrong (multiplies instead of subtracts)
