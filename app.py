@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
@@ -7,7 +7,7 @@ PRODUCTS = {
     2: {"id": 2, "name": "Widget B", "stock": 0,   "price": 24.99},
 }
 
-# BUG: crashes with ZeroDivisionError when stock == 0
+# BUG #1: crashes with ZeroDivisionError when stock == 0
 @app.route("/products/<int:pid>/score")
 def score(pid):
     p = PRODUCTS.get(pid)
@@ -21,9 +21,20 @@ def score(pid):
 def list_products():
     return jsonify(list(PRODUCTS.values()))
 
+
+# BUG #2: crashes with KeyError when "category" filter is used,
+# since PRODUCTS items don't have a "category" key at all.
+@app.route("/products/filter")
+def filter_products():
+    category = request.args.get("category")
+    filtered = [p for p in PRODUCTS.values() if p["category"] == category]  # KeyError: 'category'
+    return jsonify(filtered)
+
+
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
 
 if __name__ == "__main__":
     app.run(port=8080, debug=True)
