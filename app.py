@@ -7,28 +7,23 @@ PRODUCTS = {
     2: {"id": 2, "name": "Widget B", "stock": 0,   "price": 24.99},
 }
 
-# BUG #1: crashes with ZeroDivisionError when stock == 0
-@app.route("/products/<int:pid>/score")
-def score(pid):
-    p = PRODUCTS.get(pid)
-    if not p:
-        return jsonify({"error": "not found"}), 404
-    score = (p["stock"] / p["stock"]) * 100  # ZeroDivisionError when stock=0
-    return jsonify({"score": score})
-
 
 @app.route("/products")
 def list_products():
     return jsonify(list(PRODUCTS.values()))
 
 
-# BUG #2: crashes with KeyError when "category" filter is used,
-# since PRODUCTS items don't have a "category" key at all.
-@app.route("/products/filter")
-def filter_products():
-    category = request.args.get("category")
-    filtered = [p for p in PRODUCTS.values() if p["category"] == category]  # KeyError: 'category'
-    return jsonify(filtered)
+# BUG: TypeError when "discount" query param is passed as a string
+# and used directly in arithmetic without conversion.
+@app.route("/products/<int:pid>/discounted-price")
+def discounted_price(pid):
+    p = PRODUCTS.get(pid)
+    if not p:
+        return jsonify({"error": "not found"}), 404
+
+    discount = request.args.get("discount")  # comes in as a string, e.g. "5"
+    final_price = p["price"] - discount       # TypeError: unsupported operand type(s) for -: 'float' and 'str'
+    return jsonify({"final_price": final_price})
 
 
 @app.route("/health")
