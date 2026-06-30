@@ -8,6 +8,20 @@ PRODUCTS = {
 }
 
 
+@app.route("/products/<int:pid>/discounted-price")
+def discounted_price(pid):
+    p = PRODUCTS.get(pid)
+    if not p:
+        return jsonify({"error": "not found"}), 404
+
+    discount = request.args.get("discount", default=0.0, type=float)
+    if discount is None:
+        return jsonify({"error": "invalid discount"}), 400
+
+    final_price = p["price"] - discount
+    return jsonify({"discounted_price": final_price})
+
+
 @app.route("/products")
 def list_products():
     return jsonify(list(PRODUCTS.values()))
