@@ -7,14 +7,17 @@ PRODUCTS = {
     2: {"id": 2, "name": "Widget B", "stock": 0,   "price": 24.99},
 }
 
-# BUG: crashes with ZeroDivisionError when stock == 0
 @app.route("/products/<int:pid>/score")
 def score(pid):
     p = PRODUCTS.get(pid)
     if not p:
         return jsonify({"error": "not found"}), 404
-    score = (p["stock"] / p["stock"]) * 100  # ZeroDivisionError when stock=0
-    return jsonify({"score": score})
+    max_stock = max((product["stock"] for product in PRODUCTS.values()), default=0)
+    if max_stock <= 0:
+        score_value = 0.0
+    else:
+        score_value = (p["stock"] / max_stock) * 100
+    return jsonify({"score": score_value})
 
 
 @app.route("/products")
