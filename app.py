@@ -1,44 +1,57 @@
-import logging
 from flask import Flask, jsonify
+from flask_sqlalchemy import SQLAlchemy
 
 app = Flask(__name__)
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///shop.db"
+db = SQLAlchemy(app)
 
-PRODUCTS = {
-    1: {"id": 1, "name": "Widget A", "stock": 100, "price": 9.99},
-    2: {"id": 2, "name": "Widget B", "stock": 0,   "price": 24.99},
-}
 
-@app.route("/products/<int:pid>/score")
-def score(pid):
-    p = PRODUCTS.get(pid)
-    if not p:
-        return jsonify({"error": "not found"}), 404
+class Customer(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(80))
 
-    try:
-        # BUG (intentionally left in): ZeroDivisionError when stock == 0
-        score_value = (p["stock"] / p["stock"]) * 100
-    except ZeroDivisionError:
-        # APM hook: log a structured, greppable error an automation
-        # pipeline can match on and then apply the remediation below.
-        logger.error(
-            "ZeroDivisionError in /products/%s/score | stock=%s",
-            pid, p["stock"],
-            extra={"error_code": "SCORE_DIV_ZERO", "product_id": pid},
-        )
-        # Remediation: treat zero stock as score 0 instead of crashing.
-        score_value = 0
 
-    return jsonify({"score": score_value})
+class Order(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"))
+    total = db.Column(db.Float)
 
-@app.route("/products")
-def list_products():
-    return jsonify(list(PRODUCTS.values()))
+
+@app.route("/seed")
+def seed():
+    db.create_all()
+    for i in range(1, 21):
+        c = Customer(name=f"Customer {i}")
+        db.session.add(c)
+        db.session.flush()
+        for j in range(3):
+            db.session.add(Order(customer_id=c.id, total=10.0 * (j + 1)))
+    db.session.commit()
+    return jsonify({"status": "seeded"})
+
+
+# BUG: N+1 query pattern.
+# This runs 1 query to get all customers, then loops and runs
+# 1 additional query PER customer to fetch their orders = N+1 total queries.
+@app.route("/customers/orders-summary")
+def orders_summary_n_plus_1():
+    customers = Customer.query.all()  # query #1
+    result = []
+    for c in customers:
+        # separate query per customer -> N additional queries
+        orders = Order.query.filter_by(customer_id=c.id).all()
+        result.append({
+            "customer": c.name,
+            "order_count": len(orders),
+            "total_spent": sum(o.total for o in orders),
+        })
+    return jsonify(result)
+
 
 @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
+
 
 if __name__ == "__main__":
     app.run(port=8080, debug=True)
